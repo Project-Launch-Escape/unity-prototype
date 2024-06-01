@@ -1,0 +1,14 @@
+{
+    "name": "PLE.Prototype.Runtime",
+    "rootNamespace": "PLE.Prototype.Runtime",
+    "references": [],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

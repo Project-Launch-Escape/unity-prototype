@@ -27,6 +27,7 @@ namespace PLE.Prototype.Runtime.Code.Runtime.Planets
             job.Run();
         
             Mesh.ApplyAndDisposeWritableMeshData(meshDataArray, mesh);
+            mesh.RecalculateBounds();
 
             debugMaterial = new Material(debugShader);            
         

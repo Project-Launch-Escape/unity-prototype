@@ -1,7 +1,7 @@
 # Unity Prototype
 
 ## About
-This project is a basic technical demonstration/prototype of some of the Project Launch Escape functionality in Unity 6 with DOTS.
+This project is a basic technical demonstration/prototype of some of the Project Launch Escape functionality in Unity 6 with DOTS (6000.0.3f1).
 
 ## Scope
 - some form of LOD terrain rendering

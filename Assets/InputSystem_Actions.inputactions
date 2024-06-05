@@ -1124,6 +1124,54 @@
                     "isPartOfComposite": true
                 }
             ]
+        },
+        {
+            "name": "Vehicle Editor",
+            "id": "ba52680e-7e8f-44f8-91df-12c0d1e62473",
+            "actions": [
+                {
+                    "name": "Place",
+                    "type": "Button",
+                    "id": "23138606-793f-4f97-beb9-835f1e33ff37",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
+                    "name": "Delete",
+                    "type": "Button",
+                    "id": "6256585a-7493-4ef2-895b-3d5800f5326b",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                }
+            ],
+            "bindings": [
+                {
+                    "name": "",
+                    "id": "a64b6ab7-dc9d-4bb1-b1ec-92b0256bcee7",
+                    "path": "<Mouse>/leftButton",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Place",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "25faee67-6396-4c9d-af04-65005496cc87",
+                    "path": "<Keyboard>/x",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Delete",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                }
+            ]
         }
     ],
     "controlSchemes": [

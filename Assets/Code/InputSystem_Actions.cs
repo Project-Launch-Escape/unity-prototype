@@ -1147,6 +1147,54 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
                     ""isPartOfComposite"": true
                 }
             ]
+        },
+        {
+            ""name"": ""Vehicle Editor"",
+            ""id"": ""ba52680e-7e8f-44f8-91df-12c0d1e62473"",
+            ""actions"": [
+                {
+                    ""name"": ""Place"",
+                    ""type"": ""Button"",
+                    ""id"": ""23138606-793f-4f97-beb9-835f1e33ff37"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""Delete"",
+                    ""type"": ""Button"",
+                    ""id"": ""6256585a-7493-4ef2-895b-3d5800f5326b"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
+                }
+            ],
+            ""bindings"": [
+                {
+                    ""name"": """",
+                    ""id"": ""a64b6ab7-dc9d-4bb1-b1ec-92b0256bcee7"",
+                    ""path"": ""<Mouse>/leftButton"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Place"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""25faee67-6396-4c9d-af04-65005496cc87"",
+                    ""path"": ""<Keyboard>/x"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Delete"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                }
+            ]
         }
     ],
     ""controlSchemes"": [
@@ -1240,6 +1288,10 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
         m_Camera_CameraLook = m_Camera.FindAction("Camera Look", throwIfNotFound: true);
         m_Camera_CameraPan = m_Camera.FindAction("Camera Pan", throwIfNotFound: true);
         m_Camera_CameraZoom = m_Camera.FindAction("Camera Zoom", throwIfNotFound: true);
+        // Vehicle Editor
+        m_VehicleEditor = asset.FindActionMap("Vehicle Editor", throwIfNotFound: true);
+        m_VehicleEditor_Place = m_VehicleEditor.FindAction("Place", throwIfNotFound: true);
+        m_VehicleEditor_Delete = m_VehicleEditor.FindAction("Delete", throwIfNotFound: true);
     }
 
     ~@InputSystem_Actions()
@@ -1247,6 +1299,7 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
         Debug.Assert(!m_Player.enabled, "This will cause a leak and performance issues, InputSystem_Actions.Player.Disable() has not been called.");
         Debug.Assert(!m_UI.enabled, "This will cause a leak and performance issues, InputSystem_Actions.UI.Disable() has not been called.");
         Debug.Assert(!m_Camera.enabled, "This will cause a leak and performance issues, InputSystem_Actions.Camera.Disable() has not been called.");
+        Debug.Assert(!m_VehicleEditor.enabled, "This will cause a leak and performance issues, InputSystem_Actions.VehicleEditor.Disable() has not been called.");
     }
 
     public void Dispose()
@@ -1594,6 +1647,60 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
         }
     }
     public CameraActions @Camera => new CameraActions(this);
+
+    // Vehicle Editor
+    private readonly InputActionMap m_VehicleEditor;
+    private List<IVehicleEditorActions> m_VehicleEditorActionsCallbackInterfaces = new List<IVehicleEditorActions>();
+    private readonly InputAction m_VehicleEditor_Place;
+    private readonly InputAction m_VehicleEditor_Delete;
+    public struct VehicleEditorActions
+    {
+        private @InputSystem_Actions m_Wrapper;
+        public VehicleEditorActions(@InputSystem_Actions wrapper) { m_Wrapper = wrapper; }
+        public InputAction @Place => m_Wrapper.m_VehicleEditor_Place;
+        public InputAction @Delete => m_Wrapper.m_VehicleEditor_Delete;
+        public InputActionMap Get() { return m_Wrapper.m_VehicleEditor; }
+        public void Enable() { Get().Enable(); }
+        public void Disable() { Get().Disable(); }
+        public bool enabled => Get().enabled;
+        public static implicit operator InputActionMap(VehicleEditorActions set) { return set.Get(); }
+        public void AddCallbacks(IVehicleEditorActions instance)
+        {
+            if (instance == null || m_Wrapper.m_VehicleEditorActionsCallbackInterfaces.Contains(instance)) return;
+            m_Wrapper.m_VehicleEditorActionsCallbackInterfaces.Add(instance);
+            @Place.started += instance.OnPlace;
+            @Place.performed += instance.OnPlace;
+            @Place.canceled += instance.OnPlace;
+            @Delete.started += instance.OnDelete;
+            @Delete.performed += instance.OnDelete;
+            @Delete.canceled += instance.OnDelete;
+        }
+
+        private void UnregisterCallbacks(IVehicleEditorActions instance)
+        {
+            @Place.started -= instance.OnPlace;
+            @Place.performed -= instance.OnPlace;
+            @Place.canceled -= instance.OnPlace;
+            @Delete.started -= instance.OnDelete;
+            @Delete.performed -= instance.OnDelete;
+            @Delete.canceled -= instance.OnDelete;
+        }
+
+        public void RemoveCallbacks(IVehicleEditorActions instance)
+        {
+            if (m_Wrapper.m_VehicleEditorActionsCallbackInterfaces.Remove(instance))
+                UnregisterCallbacks(instance);
+        }
+
+        public void SetCallbacks(IVehicleEditorActions instance)
+        {
+            foreach (var item in m_Wrapper.m_VehicleEditorActionsCallbackInterfaces)
+                UnregisterCallbacks(item);
+            m_Wrapper.m_VehicleEditorActionsCallbackInterfaces.Clear();
+            AddCallbacks(instance);
+        }
+    }
+    public VehicleEditorActions @VehicleEditor => new VehicleEditorActions(this);
     private int m_KeyboardMouseSchemeIndex = -1;
     public InputControlScheme KeyboardMouseScheme
     {
@@ -1669,5 +1776,10 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
         void OnCameraLook(InputAction.CallbackContext context);
         void OnCameraPan(InputAction.CallbackContext context);
         void OnCameraZoom(InputAction.CallbackContext context);
+    }
+    public interface IVehicleEditorActions
+    {
+        void OnPlace(InputAction.CallbackContext context);
+        void OnDelete(InputAction.CallbackContext context);
     }
 }

@@ -1,15 +1,17 @@
 using Unity.Collections;
 using Unity.Entities;
-using Unity.Mathematics;
 using Unity.Physics;
-using Unity.Transforms;
 
 partial class EditSystem : SystemBase {
 
     const int RAYCAST_LENGTH = 1000;
 
     // vehicle is made up of parts
-    // raycast against parts to place new parts or destroy existing ones
+
+    // place using drag/drop with modifier key to add more of the same
+    // raycast against parts to destroy them
+
+    // parts must have a flat child hierarchy and 1x scale
 
     InputSystem_Actions.VehicleEditorActions input;
     bool didSetup = false;
@@ -21,42 +23,52 @@ partial class EditSystem : SystemBase {
 
     protected override void OnUpdate() {
 
-        if (!didSetup) {
-            // todo - move to PlacePart()
-            // setup parent relationships for prefab
+        var entityActions = new EntityCommandBuffer(Allocator.Temp);
+
+        if (!didSetup) { // entities don't exist when OnCreate is called
+            // setup parent relationships for test parts
             var parents = new EntityQueryBuilder(Allocator.Temp)
-            .WithAny<PartTag>()
-            .Build(this)
-            .ToEntityArray(Allocator.Temp);
+                .WithAny<PartDefinition>()
+                .Build(this)
+                .ToEntityArray(Allocator.Temp);
             foreach (var entity in parents) {
-                UnityEngine.Debug.Log(entity);
-                foreach (var child in EntityManager.GetBuffer<LinkedEntityGroup>(entity, true)) {
-                    UnityEngine.Debug.Log(child); // todo - batch
-                    EntityManager.AddComponentData(child.Value, new Parent { Value = entity });
-                }
+                entityActions = SetPartRootRelationships(entityActions, entity);
             }
             didSetup = true;
         }
 
         var physics = SystemAPI.GetSingleton<PhysicsWorldSingleton>();
+        bool raycastHit = physics.CastRay(CameraRaycast(), out RaycastHit closestHit);
 
-        if (input.Place.WasPressedThisFrame()) {
-            // todo - position/rotation
-        }
-        else if (input.Delete.WasPressedThisFrame()
-            && physics.CastRay(CameraRaycast(), out RaycastHit closestHit)) {
-            if (SystemAPI.HasComponent<Parent>(closestHit.Entity)) {
-                RemovePart(SystemAPI.GetComponent<Parent>(closestHit.Entity).Value);
+        if (raycastHit) {
+
+
+            if (input.Place.WasPressedThisFrame()) {
+                Entity currentPart = SystemAPI.GetSingleton<EditSystemData>().CurrentPart;
+                var newPart = entityActions.Instantiate(currentPart);
+                entityActions = SetPartRootRelationships(entityActions, newPart);
+            }
+            else if (input.Delete.WasPressedThisFrame()) {
+                if (SystemAPI.HasComponent<RelatedToPart>(closestHit.Entity)) {
+                    entityActions.DestroyEntity(SystemAPI.GetComponent<RelatedToPart>(closestHit.Entity).Root);
+                }
             }
         }
+
+        entityActions.Playback(EntityManager);
     }
 
-    void PlacePart(float3 position, quaternion rotation) {
-        // todo
-    }
-
-    void RemovePart(Entity e) {
-        EntityManager.DestroyEntity(e);
+    // prefabs don't have transform parent/child relationships set up, which we need for deleting things
+    private EntityCommandBuffer SetPartRootRelationships(EntityCommandBuffer entityActions, Entity currentPart) {
+        if (EntityManager.HasComponent<LinkedEntityGroup>(currentPart)) {
+            foreach (var child in EntityManager.GetBuffer<LinkedEntityGroup>(currentPart, true)) {
+                if (child.Value == currentPart) {
+                    continue;
+                }
+                entityActions.AddComponent(child.Value, new RelatedToPart { Root = currentPart });
+            }
+        }
+        return entityActions;
     }
 
     RaycastInput CameraRaycast() {
@@ -64,7 +76,7 @@ partial class EditSystem : SystemBase {
         return new RaycastInput {
             Start = ray.origin,
             End = ray.origin + (ray.direction * RAYCAST_LENGTH),
-            Filter = CollisionFilter.Default, // vehicle part layer
+            Filter = new CollisionFilter { BelongsTo = (1 << 6), CollidesWith = (1 << 6) }, // vehicle part layer
         };
     }
 

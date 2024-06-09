@@ -29,7 +29,7 @@ partial class EditSystem : SystemBase {
         RaycastInput raycast = CameraRaycast(out float3 raycastDir);
         bool raycastHit = GetPartFrom(raycast, out RaycastHit closestHit, out Entity raycastPart);
 
-        if (SystemAPI.TryGetSingletonEntity<PlacementGhostTag>(out Entity placementGhost)) {
+        if (SystemAPI.TryGetSingletonEntity<PlacementGhost>(out Entity placementGhost)) {
             // move ghost
             LocalTransform placeTransform;
             if (raycastHit) {
@@ -41,7 +41,7 @@ partial class EditSystem : SystemBase {
             }
             else {
                 placeTransform = new LocalTransform {
-                    Position = raycast.Start + raycastDir * UnityEngine.Camera.main.transform.localPosition.magnitude,
+                    Position = raycast.Start + raycastDir * UnityEngine.Camera.main.transform.localPosition.magnitude, // todo - should be coplanar with origin
                     Rotation = quaternion.identity,
                     Scale = 1
                 };
@@ -52,7 +52,8 @@ partial class EditSystem : SystemBase {
                 PlacePart(ref actionQueue, SystemAPI.GetSingletonBuffer<PartsBuffer>()[state.SelectedPart].Value, placeTransform, raycastHit ? raycastPart : Entity.Null);
             }
         }
-        else if (input.Delete.WasPressedThisFrame() && raycastHit) {
+
+        if (input.Delete.WasPressedThisFrame() && raycastHit) {
             // todo - handling for single part deletion
             DeletePartTree(ref actionQueue, raycastPart);
         }
@@ -67,14 +68,54 @@ partial class EditSystem : SystemBase {
         actionQueue.Playback(EntityManager);
     }
 
+    /// <returns>true if part found</returns>
+    bool GetPartFrom(RaycastInput raycast, out RaycastHit closestHit, out Entity part) {
+        if (!SystemAPI.GetSingleton<PhysicsWorldSingleton>().CastRay(raycast, out closestHit)) {
+            part = default;
+            return false;
+        }
+
+        if (SystemAPI.HasComponent<PartDefinition>(closestHit.Entity)) {
+            part = closestHit.Entity;
+            return true;
+        }
+        if (SystemAPI.HasComponent<Parent>(closestHit.Entity)) {
+            part = SystemAPI.GetComponent<Parent>(closestHit.Entity).Value;
+            if (!SystemAPI.HasComponent<PartDefinition>(part)) {
+                Debug.LogError("Part has nested children!");
+                return false;
+            }
+            return true;
+        }
+        part = default;
+        return false;
+    }
+
+    void PlacePart(ref EntityCommandBuffer actionQueue, Entity part, LocalTransform placeTransform, Entity parentPart) {
+        var newPart = EntityManager.Instantiate(part);
+
+        // todo - place one part at a time + modifier to place more at a time
+
+        if (EntityManager.Exists(parentPart)) {
+            actionQueue.AppendToBuffer(parentPart, new PartChildBuffer { Value = newPart });
+        }
+        actionQueue.AddBuffer<PartChildBuffer>(newPart);
+
+        actionQueue.SetComponent(newPart, placeTransform);
+    }
+
     void DeletePartTree(ref EntityCommandBuffer actionQueue, Entity rootPart) {
-        var deletedParts = new NativeList<int>(Allocator.Temp);
+        var deletedParts = new NativeList<int>(Allocator.Temp); // if there are cycles in the part tree this will loop forever
         var deleteFrontier = new NativeQueue<Entity>(Allocator.Temp);
         deleteFrontier.Enqueue(rootPart);
 
         while (!deleteFrontier.IsEmpty()) {
             var next = deleteFrontier.Dequeue();
+            if (!EntityManager.Exists(next)) {
+                continue;
+            }
             if (deletedParts.Contains(next.Index)) {
+                Debug.LogWarning($"{next} was referenced in the part tree more than once");
                 continue;
             }
             foreach (var child in EntityManager.GetBuffer<PartChildBuffer>(next)) {
@@ -87,7 +128,7 @@ partial class EditSystem : SystemBase {
 
     /// <returns>true if ghost existed</returns>
     bool DestroyPlacementGhost(ref EntityCommandBuffer actionQueue) {
-        if (SystemAPI.TryGetSingletonEntity<PlacementGhostTag>(out Entity placementGhost)) {
+        if (SystemAPI.TryGetSingletonEntity<PlacementGhost>(out Entity placementGhost)) {
             actionQueue.DestroyEntity(placementGhost);
             return true;
         }
@@ -96,61 +137,27 @@ partial class EditSystem : SystemBase {
 
     void SetupPlacementGhost(ref EntityCommandBuffer actionQueue) {
         var state = SystemAPI.GetSingletonRW<EditSystemData>();
-        var parts = SystemAPI.GetSingletonBuffer<PartsBuffer>();
+        var parts = SystemAPI.GetSingletonBuffer<PartsBuffer>(true);
 
         if (DestroyPlacementGhost(ref actionQueue)) {
-            state.ValueRW.IncrementSelection();
+            // increment part - no ui at the moment
+            state.ValueRW.SelectedPart = (state.ValueRO.SelectedPart + 1) % state.ValueRO.AvailablePartsCount;
         }
 
         var ghost = EntityManager.Instantiate(parts[state.ValueRO.SelectedPart].Value);
-        actionQueue.AddComponent<PlacementGhostTag>(ghost);
-        if (EntityManager.HasComponent<LinkedEntityGroup>(ghost)) {
-            foreach (var child in EntityManager.GetBuffer<LinkedEntityGroup>(ghost, true)) {
-                actionQueue.RemoveComponent<PhysicsCollider>(child.Value); // don't interfere with my raycast!!!
+        Aabb bounds = new Aabb();
+        NativeList<Aabb> boundsList = new NativeList<Aabb>(Allocator.Temp);
+        foreach (var childWrapper in EntityManager.GetBuffer<LinkedEntityGroup>(ghost, true)) {
+            var child = childWrapper.Value;
+            if (SystemAPI.HasComponent<PhysicsCollider>(child)) {
+                boundsList.Add(SystemAPI.GetComponent<PhysicsCollider>(child).Value.Value.CalculateAabb());
+                actionQueue.RemoveComponent<PhysicsCollider>(child); // don't interfere with the camera raycast!!!
             }
         }
-    }
-
-    /// <returns>true if part found</returns>
-    bool GetPartFrom(RaycastInput raycast, out RaycastHit closestHit, out Entity part) {
-        if (!SystemAPI.GetSingleton<PhysicsWorldSingleton>().CastRay(raycast, out closestHit)) {
-            part = default;
-            return false;
+        foreach (var abbb in boundsList) {
+            bounds.Include(abbb);
         }
-
-        if (SystemAPI.HasComponent<PartDefinition>(closestHit.Entity)) {
-            part = closestHit.Entity;
-            return true;
-        }
-        if (SystemAPI.HasComponent<RelatedToPart>(closestHit.Entity)) {
-            part = SystemAPI.GetComponent<RelatedToPart>(closestHit.Entity).Root;
-            return true;
-        }
-        Debug.LogWarning($"raycast hit entity {closestHit.Entity} that wasn't a part");
-        part = default;
-        return false;
-    }
-
-    void PlacePart(ref EntityCommandBuffer actionQueue, Entity part, LocalTransform placeTransform, Entity parentPart) {
-        var newPart = EntityManager.Instantiate(part);
-
-        // todo - place one part at a time + modifier to place more at a time
-
-        if (parentPart != Entity.Null) {
-            actionQueue.AppendToBuffer(parentPart, new PartChildBuffer { Value = newPart });
-        }
-        actionQueue.AddBuffer<PartChildBuffer>(newPart);
-
-        actionQueue.SetComponent(newPart, placeTransform);
-        if (EntityManager.HasComponent<LinkedEntityGroup>(newPart)) {
-            // prefabs don't have transform parent/child relationships set up, which we need for deleting things
-            foreach (var child in EntityManager.GetBuffer<LinkedEntityGroup>(newPart, true)) {
-                if (child.Value == newPart) {
-                    continue;
-                }
-                actionQueue.AddComponent(child.Value, new RelatedToPart { Root = newPart });
-            }
-        }
+        actionQueue.AddComponent(ghost, new PlacementGhost { bounds = bounds });
     }
 
     RaycastInput CameraRaycast(out float3 direction) {

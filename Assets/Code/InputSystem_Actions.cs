@@ -1169,6 +1169,24 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
                     ""processors"": """",
                     ""interactions"": """",
                     ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""Summon"",
+                    ""type"": ""Button"",
+                    ""id"": ""71e5a365-2458-41c8-b3b3-aa87242cb957"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""Cancel"",
+                    ""type"": ""Button"",
+                    ""id"": ""9b153de7-f7fb-44c9-a177-ab8bb96eb890"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
                 }
             ],
             ""bindings"": [
@@ -1191,6 +1209,28 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
                     ""processors"": """",
                     ""groups"": """",
                     ""action"": ""Delete"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""34d488c3-a933-41f7-af0e-73d66f573873"",
+                    ""path"": ""<Keyboard>/1"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Summon"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""6938b6ef-819c-4696-b4b2-f52d87b39efe"",
+                    ""path"": ""<Keyboard>/escape"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Cancel"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
                 }
@@ -1292,6 +1332,8 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
         m_VehicleEditor = asset.FindActionMap("Vehicle Editor", throwIfNotFound: true);
         m_VehicleEditor_Place = m_VehicleEditor.FindAction("Place", throwIfNotFound: true);
         m_VehicleEditor_Delete = m_VehicleEditor.FindAction("Delete", throwIfNotFound: true);
+        m_VehicleEditor_Summon = m_VehicleEditor.FindAction("Summon", throwIfNotFound: true);
+        m_VehicleEditor_Cancel = m_VehicleEditor.FindAction("Cancel", throwIfNotFound: true);
     }
 
     ~@InputSystem_Actions()
@@ -1653,12 +1695,16 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
     private List<IVehicleEditorActions> m_VehicleEditorActionsCallbackInterfaces = new List<IVehicleEditorActions>();
     private readonly InputAction m_VehicleEditor_Place;
     private readonly InputAction m_VehicleEditor_Delete;
+    private readonly InputAction m_VehicleEditor_Summon;
+    private readonly InputAction m_VehicleEditor_Cancel;
     public struct VehicleEditorActions
     {
         private @InputSystem_Actions m_Wrapper;
         public VehicleEditorActions(@InputSystem_Actions wrapper) { m_Wrapper = wrapper; }
         public InputAction @Place => m_Wrapper.m_VehicleEditor_Place;
         public InputAction @Delete => m_Wrapper.m_VehicleEditor_Delete;
+        public InputAction @Summon => m_Wrapper.m_VehicleEditor_Summon;
+        public InputAction @Cancel => m_Wrapper.m_VehicleEditor_Cancel;
         public InputActionMap Get() { return m_Wrapper.m_VehicleEditor; }
         public void Enable() { Get().Enable(); }
         public void Disable() { Get().Disable(); }
@@ -1674,6 +1720,12 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
             @Delete.started += instance.OnDelete;
             @Delete.performed += instance.OnDelete;
             @Delete.canceled += instance.OnDelete;
+            @Summon.started += instance.OnSummon;
+            @Summon.performed += instance.OnSummon;
+            @Summon.canceled += instance.OnSummon;
+            @Cancel.started += instance.OnCancel;
+            @Cancel.performed += instance.OnCancel;
+            @Cancel.canceled += instance.OnCancel;
         }
 
         private void UnregisterCallbacks(IVehicleEditorActions instance)
@@ -1684,6 +1736,12 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
             @Delete.started -= instance.OnDelete;
             @Delete.performed -= instance.OnDelete;
             @Delete.canceled -= instance.OnDelete;
+            @Summon.started -= instance.OnSummon;
+            @Summon.performed -= instance.OnSummon;
+            @Summon.canceled -= instance.OnSummon;
+            @Cancel.started -= instance.OnCancel;
+            @Cancel.performed -= instance.OnCancel;
+            @Cancel.canceled -= instance.OnCancel;
         }
 
         public void RemoveCallbacks(IVehicleEditorActions instance)
@@ -1781,5 +1839,7 @@ public partial class @InputSystem_Actions: IInputActionCollection2, IDisposable
     {
         void OnPlace(InputAction.CallbackContext context);
         void OnDelete(InputAction.CallbackContext context);
+        void OnSummon(InputAction.CallbackContext context);
+        void OnCancel(InputAction.CallbackContext context);
     }
 }

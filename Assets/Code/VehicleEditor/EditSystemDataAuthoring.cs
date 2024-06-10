@@ -2,6 +2,7 @@
 using Unity.Entities;
 using UnityEngine;
 
+/// <inheritdoc cref="EditSystemData"/>
 public class EditSystemDataAuthoring : MonoBehaviour {
 
     public GameObject[] parts;

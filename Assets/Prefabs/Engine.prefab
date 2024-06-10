@@ -49,8 +49,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   data:
-    Thrust: 0
-    SpecificImpulse: 0
+    Thrust: 5000
+    SpecificImpulse: 300
 --- !u!114 &3200820775203999262
 MonoBehaviour:
   m_ObjectHideFlags: 0

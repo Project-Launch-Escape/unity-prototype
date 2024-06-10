@@ -1,6 +1,7 @@
 using Unity.Entities;
 using UnityEngine;
 
+/// <inheritdoc cref="PartDefinition"/>
 public class PartDefinitionAuthoring : MonoBehaviour {
 
     public PartDefinition data;

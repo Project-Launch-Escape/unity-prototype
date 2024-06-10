@@ -5,6 +5,9 @@ using Unity.Physics;
 using Unity.Transforms;
 using Debug = UnityEngine.Debug;
 
+/// <summary>
+/// Primary system for vehicle editor - placing, deleting, etc
+/// </summary>
 partial class EditSystem : SystemBase {
 
     // vehicle is made up of parts

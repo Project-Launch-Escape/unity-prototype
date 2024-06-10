@@ -1,6 +1,9 @@
 ﻿using UnityEngine;
 using UnityEngine.InputSystem;
 
+/// <summary>
+/// A basic orbiting camera component. Includes orbiting (right click), panning (middle click), and zoom (scroll).
+/// </summary>
 public class OrbitalCamera : MonoBehaviour, InputSystem_Actions.ICameraActions {
 
     public float SpeedRotateX = 5 * 0.05f;

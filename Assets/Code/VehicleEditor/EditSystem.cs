@@ -7,6 +7,12 @@ using Debug = UnityEngine.Debug;
 
 /// <summary>
 /// Primary system for vehicle editor - placing, deleting, etc
+/// 
+/// Controls:
+/// - 1 -> Summon ghost (repeat press to cycle part)
+/// - Esc -> Cancel ghost
+/// - Left click -> Place part
+/// - X -> Delete part tree
 /// </summary>
 partial class EditSystem : SystemBase {
 
@@ -29,7 +35,7 @@ partial class EditSystem : SystemBase {
         var actionQueue = new EntityCommandBuffer(Allocator.Temp);
         var state = SystemAPI.GetSingleton<EditSystemData>();
 
-        RaycastInput raycast = CameraRaycast(out float3 raycastDir);
+        RaycastInput raycast = GetCameraRaycast(out float3 raycastDir);
         bool raycastHit = GetPartFrom(raycast, out RaycastHit closestHit, out Entity raycastPart);
 
         if (SystemAPI.TryGetSingletonEntity<PlacementGhost>(out Entity placementGhost)) {
@@ -41,6 +47,8 @@ partial class EditSystem : SystemBase {
                     Rotation = quaternion.LookRotationSafe(closestHit.SurfaceNormal, new(0, 1, 0)),
                     Scale = 1
                 };
+                var offsetDirection = placeTransform.InverseTransformDirection(closestHit.SurfaceNormal);
+                placeTransform.Position += placeTransform.TransformDirection(GetPlacementOffset(offsetDirection));
             }
             else {
                 placeTransform = new LocalTransform {
@@ -108,7 +116,7 @@ partial class EditSystem : SystemBase {
     }
 
     void DeletePartTree(ref EntityCommandBuffer actionQueue, Entity rootPart) {
-        var deletedParts = new NativeList<int>(Allocator.Temp); // if there are cycles in the part tree this will loop forever
+        var deletedParts = new NativeList<int>(Allocator.Temp);
         var deleteFrontier = new NativeQueue<Entity>(Allocator.Temp);
         deleteFrontier.Enqueue(rootPart);
 
@@ -117,6 +125,7 @@ partial class EditSystem : SystemBase {
             if (!EntityManager.Exists(next)) {
                 continue;
             }
+            // if there are cycles in the part tree this will loop forever and lock up the game, so we need to check if a part appears more than once and skip it
             if (deletedParts.Contains(next.Index)) {
                 Debug.LogWarning($"{next} was referenced in the part tree more than once");
                 continue;
@@ -148,22 +157,48 @@ partial class EditSystem : SystemBase {
         }
 
         var ghost = EntityManager.Instantiate(parts[state.ValueRO.SelectedPart].Value);
-        Aabb bounds = new Aabb();
+
+        // reset ghost position for bounds calcs
+        var ghostTransform = SystemAPI.GetComponentRW<LocalTransform>(ghost);
+        ghostTransform.ValueRW.Position = float3.zero;
+        ghostTransform.ValueRW.Rotation = quaternion.identity;
+        ghostTransform.ValueRW.Scale = 1;
+
+        // setup bounds to calculate how far to offset the prefab so it doesn't clip into whatever it's placed against
         NativeList<Aabb> boundsList = new NativeList<Aabb>(Allocator.Temp);
         foreach (var childWrapper in EntityManager.GetBuffer<LinkedEntityGroup>(ghost, true)) {
             var child = childWrapper.Value;
             if (SystemAPI.HasComponent<PhysicsCollider>(child)) {
-                boundsList.Add(SystemAPI.GetComponent<PhysicsCollider>(child).Value.Value.CalculateAabb());
+                Aabb childBounds = SystemAPI.GetComponent<PhysicsCollider>(child).Value.Value.CalculateAabb();
+                var childTransform = SystemAPI.GetComponent<LocalTransform>(child);
+
+                // child position not automatically accounted for when calculating bounds
+                // todo - if there are nested children this will break...
+                childBounds.Min += childTransform.Position;
+                childBounds.Max += childTransform.Position;
+
+                boundsList.Add(childBounds);
                 actionQueue.RemoveComponent<PhysicsCollider>(child); // don't interfere with the camera raycast!!!
             }
         }
+        Aabb bounds = new Aabb();
         foreach (var abbb in boundsList) {
             bounds.Include(abbb);
         }
+
         actionQueue.AddComponent(ghost, new PlacementGhost { bounds = bounds });
     }
 
-    RaycastInput CameraRaycast(out float3 direction) {
+    float3 GetPlacementOffset(float3 dir) {
+        Aabb bounds = SystemAPI.GetSingleton<PlacementGhost>().bounds;
+        float x = dir.x < 0 ? bounds.Max.x : -bounds.Min.x;
+        float y = dir.y < 0 ? bounds.Max.y : -bounds.Min.y;
+        float z = dir.z < 0 ? bounds.Max.z : -bounds.Min.z;
+        float3 res = new(x * dir.x, y * dir.y, z * dir.z);
+        return res;
+    }
+
+    RaycastInput GetCameraRaycast(out float3 direction) {
         UnityEngine.Ray ray = UnityEngine.Camera.main.ScreenPointToRay(UnityEngine.Input.mousePosition);
         direction = ray.direction;
         return new RaycastInput {

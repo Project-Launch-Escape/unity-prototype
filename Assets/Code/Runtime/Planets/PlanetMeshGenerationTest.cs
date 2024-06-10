@@ -2,6 +2,8 @@
 using PLE.Prototype.Runtime.Code.Runtime.Planets.Jobs;
 using Unity.Jobs;
 using UnityEngine;
+using Unity.Entities;
+using Unity.VisualScripting.YamlDotNet.Core.Tokens;
 
 namespace PLE.Prototype.Runtime.Code.Runtime.Planets
 {
@@ -14,16 +16,32 @@ namespace PLE.Prototype.Runtime.Code.Runtime.Planets
         private Mesh mesh;
         private GameObject previewGameObject;
         private Material debugMaterial;
-        
-        private void Start()
+        [Range(0,15)]
+        public int MaxIteration;
+
+        public Transform cameraPosition;
+        public Entity Entity;
+        private void Update()
         {
+            if (mesh)
+                Destroy(mesh);
+
+            if (previewGameObject)
+                Destroy(previewGameObject);
+
+            if (debugMaterial)
+                Destroy(debugMaterial);
+
             mesh = new Mesh();
             var meshDataArray = Mesh.AllocateWritableMeshData(mesh);
 
+            EntityManager manager = World.DefaultGameObjectInjectionWorld.EntityManager;
             var job = new PlanetMeshGenerationJob
             {
-                MeshData = meshDataArray[0]
-            };
+                MeshData = meshDataArray[0],
+                MaxIteration = MaxIteration,
+                campos=cameraPosition.position
+        };
             job.Run();
         
             Mesh.ApplyAndDisposeWritableMeshData(meshDataArray, mesh);

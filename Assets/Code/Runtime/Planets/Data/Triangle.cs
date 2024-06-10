@@ -1,5 +1,5 @@
 ﻿using System.Runtime.InteropServices;
-
+using Unity.Mathematics;
 namespace PLE.Prototype.Runtime.Code.Runtime.Planets.Data
 {
     [StructLayout(LayoutKind.Sequential)]

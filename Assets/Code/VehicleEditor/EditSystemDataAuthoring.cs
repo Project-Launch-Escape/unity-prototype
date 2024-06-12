@@ -5,6 +5,9 @@ using UnityEngine;
 /// <inheritdoc cref="EditSystemData"/>
 public class EditSystemDataAuthoring : MonoBehaviour {
 
+    [TextArea]
+    public string notes = "Did you make sure your new part \n- doesn't have nested children?\n- is 1x scale?";
+
     public GameObject[] parts;
 
     public class Baker : Baker<EditSystemDataAuthoring> {

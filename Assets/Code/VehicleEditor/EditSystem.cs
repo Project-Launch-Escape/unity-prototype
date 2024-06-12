@@ -15,6 +15,7 @@ using Debug = UnityEngine.Debug;
 /// - X -> Delete part tree
 /// </summary>
 partial class EditSystem : SystemBase {
+    private const float SNAP_DISTANCE = .5f;
 
     // vehicle is made up of parts
 
@@ -35,45 +36,83 @@ partial class EditSystem : SystemBase {
         var actionQueue = new EntityCommandBuffer(Allocator.Temp);
         var state = SystemAPI.GetSingleton<EditSystemData>();
 
-        RaycastInput raycast = GetCameraRaycast(out float3 raycastDir);
-        bool raycastHit = GetPartFrom(raycast, out RaycastHit closestHit, out Entity raycastPart);
-
-        if (SystemAPI.TryGetSingletonEntity<PlacementGhost>(out Entity placementGhost)) {
-            // move ghost
-            LocalTransform placeTransform;
-            if (raycastHit) {
-                placeTransform = new LocalTransform {
-                    Position = closestHit.Position,
-                    Rotation = quaternion.LookRotationSafe(closestHit.SurfaceNormal, new(0, 1, 0)),
-                    Scale = 1
-                };
-                var offsetDirection = placeTransform.InverseTransformDirection(closestHit.SurfaceNormal);
-                placeTransform.Position += placeTransform.TransformDirection(GetPlacementOffset(offsetDirection));
-            }
-            else {
-                placeTransform = new LocalTransform {
-                    Position = raycast.Start + raycastDir * UnityEngine.Camera.main.transform.localPosition.magnitude, // todo - should be coplanar with origin
-                    Rotation = quaternion.identity,
-                    Scale = 1
-                };
-            }
-            actionQueue.SetComponent(placementGhost, placeTransform);
-
-            if (input.Place.WasPressedThisFrame()) {
-                PlacePart(ref actionQueue, SystemAPI.GetSingletonBuffer<PartsBuffer>()[state.SelectedPart].Value, placeTransform, raycastHit ? raycastPart : Entity.Null);
-            }
-        }
-
-        if (input.Delete.WasPressedThisFrame() && raycastHit) {
-            // todo - handling for single part deletion
-            DeletePartTree(ref actionQueue, raycastPart);
-        }
+        RaycastInput raycast = GetCameraRaycast(out float3 clickDirection);
+        bool hitPart = GetPartFrom(raycast, out RaycastHit hitInfo, out Entity parentPart);
 
         if (input.Summon.WasPressedThisFrame()) {
             SetupPlacementGhost(ref actionQueue);
         }
         else if (input.Cancel.WasPressedThisFrame()) {
             DestroyPlacementGhost(ref actionQueue);
+        }
+        else if (SystemAPI.TryGetSingletonEntity<PlacementGhost>(out Entity placementGhost)) { // move ghost
+            LocalTransform placeTransform;
+
+            // derive where ghost should be
+            if (hitPart) { // against part surface
+                placeTransform = new LocalTransform {
+                    Position = hitInfo.Position,
+                    Rotation = quaternion.LookRotationSafe(hitInfo.SurfaceNormal, new(0, 1, 0)),
+                    Scale = 1
+                };
+                var offsetDirection = placeTransform.InverseTransformDirection(hitInfo.SurfaceNormal);
+                placeTransform.Position += placeTransform.TransformDirection(GetPlacementOffset(offsetDirection));
+            }
+            else { // free placement
+                placeTransform = new LocalTransform {
+                    Position = raycast.Start + clickDirection * UnityEngine.Camera.main.transform.localPosition.magnitude, // todo - should be coplanar with origin
+                    Rotation = quaternion.identity,
+                    Scale = 1
+                };
+            }
+
+            // apply snapping
+            if (!state.IsSnapping && FindValidSnapPointInRange(out var snapTransform, out Entity part)) { // start snapping
+                var stateRW = SystemAPI.GetSingletonRW<EditSystemData>();
+                stateRW.ValueRW.IsSnapping = true;
+                stateRW.ValueRW.LastGhostPositionBeforeSnap = placeTransform.Position;
+                stateRW.ValueRW.WasAgainstPartBeforeSnapping = hitPart;
+
+                placeTransform = new LocalTransform {
+                    Position = snapTransform.Position,
+                    Rotation = quaternion.LookRotationSafe(snapTransform.Up, new(0, 1, 0)),
+                    Scale = 1
+                };
+                var offsetDirection = placeTransform.InverseTransformDirection(snapTransform.Up);
+                placeTransform.Position += placeTransform.TransformDirection(GetPlacementOffset(offsetDirection));
+
+                stateRW.ValueRW.SnapPosition = placeTransform.Position;
+                stateRW.ValueRW.SnapRotation = placeTransform.Rotation;
+                actionQueue.AddComponent<SnappedToPartTag>(part);
+            }
+            else if (state.IsSnapping) {
+                var snappedPart = SystemAPI.GetSingletonEntity<SnappedToPartTag>();
+                bool cursorMovedAway = math.length(placeTransform.Position - state.LastGhostPositionBeforeSnap) < SNAP_DISTANCE;
+                if (state.WasAgainstPartBeforeSnapping == hitPart && cursorMovedAway) { // continue snapping
+                    placeTransform = new LocalTransform {
+                        Position = state.SnapPosition,
+                        Rotation = state.SnapRotation,
+                        Scale = 1
+                    };
+                    parentPart = snappedPart;
+                }
+                else { // finish snapping
+                    var stateRW = SystemAPI.GetSingletonRW<EditSystemData>();
+                    stateRW.ValueRW.IsSnapping = false;
+                    actionQueue.RemoveComponent<SnappedToPartTag>(snappedPart);
+                }
+            }
+
+            actionQueue.SetComponent(placementGhost, placeTransform);
+
+            if (input.Place.WasPressedThisFrame()) {
+                PlacePart(ref actionQueue, SystemAPI.GetSingletonBuffer<PartsBuffer>()[state.SelectedPart].Value, placeTransform, hitPart ? parentPart : Entity.Null);
+            }
+        }
+
+        if (input.Delete.WasPressedThisFrame() && hitPart) {
+            // todo - handling for single part deletion
+            DeletePartTree(ref actionQueue, parentPart);
         }
 
         actionQueue.Playback(EntityManager);
@@ -180,6 +219,9 @@ partial class EditSystem : SystemBase {
                 boundsList.Add(childBounds);
                 actionQueue.RemoveComponent<PhysicsCollider>(child); // don't interfere with the camera raycast!!!
             }
+            if (SystemAPI.HasComponent<SnapPoint>(child)) {
+                actionQueue.AddComponent<SnapPointGhostTag>(child);
+            }
         }
         Aabb bounds = new Aabb();
         foreach (var abbb in boundsList) {
@@ -206,6 +248,60 @@ partial class EditSystem : SystemBase {
             End = ray.origin + (ray.direction * 100),
             Filter = new CollisionFilter { BelongsTo = (1 << 6), CollidesWith = int.MaxValue }, // vehicle part layer
         };
+    }
+
+    /// <returns>true if snap point found + LocalToWorld of same</returns>
+    bool FindValidSnapPointInRange(out LocalToWorld snapTransform, out Entity part) {
+        var ghostSnapChunks = new EntityQueryBuilder(Allocator.Temp)
+            .WithAll<SnapPoint, SnapPointGhostTag>()
+            .Build(this)
+            .ToArchetypeChunkArray(Allocator.Temp);
+        var otherSnapChunks = new EntityQueryBuilder(Allocator.Temp)
+            .WithAll<SnapPoint>()
+            .WithAbsent<SnapPointGhostTag>()
+            .Build(this)
+            .ToArchetypeChunkArray(Allocator.Temp);
+
+        var snapPointHandle = SystemAPI.GetComponentTypeHandle<SnapPoint>(true);
+        var localToWorldHandle = SystemAPI.GetComponentTypeHandle<LocalToWorld>(true);
+        var parentHandle = SystemAPI.GetComponentTypeHandle<Parent>(true);
+
+        // this looks really really bad but is actually O(ghost snaps * other snaps) which is just bad
+        foreach (var ghostSnapChunk in ghostSnapChunks) {
+
+            NativeArray<SnapPoint> ghostSnapPoints = ghostSnapChunk.GetNativeArray(ref snapPointHandle);
+            NativeArray<LocalToWorld> ghostSnapTransforms = ghostSnapChunk.GetNativeArray(ref localToWorldHandle);
+
+            for (int i = 0; i < ghostSnapChunk.Count; i++) {
+                PartPlacementFlags ghostSnapPlaceFlags = ghostSnapPoints[i].belongsTo;
+                LocalToWorld ghostSnapTransform = ghostSnapTransforms[i];
+
+                foreach (var otherSnapChunk in otherSnapChunks) {
+                    NativeArray<SnapPoint> otherSnapPoints = otherSnapChunk.GetNativeArray(ref snapPointHandle);
+                    NativeArray<LocalToWorld> otherSnapTransforms = otherSnapChunk.GetNativeArray(ref localToWorldHandle);
+                    NativeArray<Parent> otherSnapParents = otherSnapChunk.GetNativeArray(ref parentHandle);
+
+                    for (int j = 0; j < otherSnapChunk.Count; j++) {
+                        PartPlacementFlags otherSnapPlaceFlags = otherSnapPoints[j].connectsWith;
+
+                        if ((ghostSnapPlaceFlags & otherSnapPlaceFlags) == 0) {
+                            continue;
+                        }
+
+                        LocalToWorld otherSnapTransform = otherSnapTransforms[j];
+                        float3 diff = ghostSnapTransform.Position - otherSnapTransform.Position;
+                        if (math.length(diff) < SNAP_DISTANCE) {
+                            snapTransform = otherSnapTransform;
+                            part = otherSnapParents[j].Value; // assuming that the hierarchy is flat
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        snapTransform = default;
+        part = default;
+        return false;
     }
 
     protected override void OnDestroy() {
